@@ -1,0 +1,8 @@
+[
+    {"uniqueNodeId": 1, "articleName": "Lorem ipsum", "climateSentiment": 0.5},
+    {"uniqueNodeId": 2, "articleName": "dolor sit", "climateSentiment": -0.8},
+    {"uniqueNodeId": 3, "articleName": "amet, consectetur", "climateSentiment": 0.2},
+    {"uniqueNodeId": 4, "articleName": "adipiscing elit", "climateSentiment": -0.4},
+    {"uniqueNodeId": 5, "articleName": "sed do", "climateSentiment": 1.0}
+  ]
+  

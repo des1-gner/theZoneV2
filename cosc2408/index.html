@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>3D Force Graph with Moving Nodes and Panning Camera</title>
+  <style> 
+    body { margin: 0; } 
+    #3d-graph { width: 100vw; height: 100vh; }
+    #legend {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background-color: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border-radius: 5px;
+      font-family: Arial, sans-serif;
+    }
+    #fpsCounter {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background-color: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 5px;
+      border-radius: 5px;
+      font-family: Arial, sans-serif;
+    }
+  </style>
+  <script src="//unpkg.com/3d-force-graph"></script>
+  <script src="//unpkg.com/d3-octree"></script>
+  <script src="//unpkg.com/d3-force-3d"></script>
+</head>
+<body>
+  <div id="3d-graph"></div>
+  <div id="legend">
+    <strong>Legend:</strong><br>
+    <span style="color: rgb(50,255,50);">Green:</span> Pro-climate action<br>
+    <span style="color: rgb(255,255,50);">Yellow:</span> Moderate sentiment<br>
+    <span style="color: rgb(255,50,50);">Red:</span> Climate misinformation
+  </div>
+  <div id="fpsCounter">FPS: <span id="fpsValue"></span></div>
+  <script type="importmap">{ "imports": { "three": "//unpkg.com/three/build/three.module.js" } }</script>
+  <script type="module">
+    import SpriteText from "//unpkg.com/three-spritetext/dist/three-spritetext.mjs";
+
+    const N = 50; // Total number of nodes
+    const nodes = [];
+    const links = [];
+
+    const climateChangeTitles = [
+      "Global Warming: An Urgent Call to Action", "The Impact of Climate Change on Polar Bears", 
+      "Renewable Energy Solutions for a Sustainable Future", "The Role of Governments in Combating Climate Change", 
+      "How Climate Change Affects Coastal Communities", "Deforestation and Its Contribution to Climate Change", 
+      "The Benefits of Electric Vehicles in Reducing Emissions", "Climate Change and Its Effect on Agriculture", 
+      "The Importance of Coral Reefs and Their Protection", "Rising Sea Levels: A Growing Threat", 
+      "How Individuals Can Reduce Their Carbon Footprint", "The Economic Impact of Climate Change", 
+      "Innovative Technologies for Carbon Capture", "Climate Change and Its Health Impacts", 
+      "The Role of Education in Climate Change Awareness", "Protecting Endangered Species from Climate Change", 
+      "How Climate Change Affects Weather Patterns", "The Importance of International Cooperation in Climate Action", 
+      "The Future of Sustainable Cities", "Adapting to Climate Change: Strategies and Solutions", 
+      "The Effects of Climate Change on Biodiversity", "The Link Between Climate Change and Natural Disasters", 
+      "How Renewable Energy Can Help Combat Climate Change", "The Role of Businesses in Climate Action", 
+      "The Impact of Climate Change on Water Resources", "How Climate Change is Affecting Food Security", 
+      "The Importance of Reforestation in Climate Mitigation", "The Role of Oceans in Climate Regulation", 
+      "Climate Change and Its Impact on Migration", "The Role of Technology in Climate Change Solutions", 
+      "How Policy Changes Can Drive Climate Action", "The Impact of Air Pollution on Climate Change", 
+      "The Benefits of Sustainable Agriculture Practices", "How to Make Your Home More Energy Efficient", 
+      "The Role of Youth in Climate Action", "The Connection Between Climate Change and Mental Health", 
+      "The Importance of Protecting Wetlands", "How Climate Change Affects Global Economies", 
+      "The Role of Innovation in Addressing Climate Change", "The Impact of Climate Change on Wildlife", 
+      "How to Reduce Plastic Pollution", "The Importance of Green Building Practices", 
+      "The Future of Climate Change Legislation", "How Climate Change Affects Indigenous Communities", 
+      "The Role of Art in Climate Change Awareness", "How Climate Change is Shaping Our Future", 
+      "The Importance of Sustainable Transportation", "How Climate Change Affects National Security", 
+      "The Role of Conservation in Climate Action", "The Impact of Climate Change on Public Health"
+    ];
+
+    // Function to generate a random sentiment value between -1 and 1
+    function getRandomSentiment() {
+      return (Math.random() * 2 - 1).toFixed(2);
+    }
+
+    // Function to map sentiment value to color with higher visibility on a black background
+    function sentimentToColor(sentiment) {
+      const maxBrightness = 255;
+      const minBrightness = 50;
+      const yellowThreshold = 0.2; // Threshold to consider sentiment as neutral
+
+      if (Math.abs(sentiment) < yellowThreshold) {
+        return `rgb(${maxBrightness},${maxBrightness},${minBrightness})`; // Bright Yellow
+      } else if (sentiment < 0) {
+        return `rgb(${maxBrightness},${minBrightness},${minBrightness})`; // Bright Red
+      } else {
+        return `rgb(${minBrightness},${maxBrightness},${minBrightness})`; // Bright Green
+      }
+    }
+
+    // Initialize the graph
+    const Graph = ForceGraph3D()(document.getElementById('3d-graph'))
+      .nodeAutoColorBy('group')
+      .linkColor(() => 'white')
+      .nodeThreeObject(node => {
+        const sprite = new SpriteText(node.text);
+        sprite.material.depthWrite = false; // make sprite background transparent
+        sprite.color = node.color;
+        sprite.textHeight = 8;
+        return sprite;
+      })
+      .forceEngine('d3')
+      .d3Force('link', d3.forceLink().distance(100).strength(0.01))
+      .d3Force('charge', d3.forceManyBody().strength(-5))
+      .d3Force('center', null); // Disable centering force
+
+    const CUBE_HALF_SIDE = 200;
+
+    function updatePositions() {
+      nodes.forEach(node => {
+        node.x += node.vx;
+        node.y += node.vy;
+        node.z += node.vz;
+
+        // bounce on box walls
+        if (Math.abs(node.x) > CUBE_HALF_SIDE) { node.vx *= -1; }
+        if (Math.abs(node.y) > CUBE_HALF_SIDE) { node.vy *= -1; }
+        if (Math.abs(node.z) > CUBE_HALF_SIDE) { node.vz *= -1; }
+
+        // bounce on other nodes
+        nodes.forEach(otherNode => {
+          if (node !== otherNode) {
+            const dx = node.x - otherNode.x;
+            const dy = node.y - otherNode.y;
+            const dz = node.z - otherNode.z;
+            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            const minDistance = 10; // minimum distance between nodes to trigger collision
+
+            if (distance < minDistance) {
+              const angle = Math.atan2(dy, dx);
+              node.vx = -Math.cos(angle);
+              node.vy = -Math.sin(angle);
+              node.vz = -Math.sin(angle);
+              otherNode.vx = Math.cos(angle);
+              otherNode.vy = Math.sin(angle);
+              otherNode.vz = Math.sin(angle);
+            }
+          }
+        });
+      });
+
+      Graph.graphData({ nodes, links });
+    }
+
+    function animate() {
+      updatePositions();
+      updateCamera();
+      updateFPS();
+      requestAnimationFrame(animate);
+    }
+
+    let angleX = 0;
+    let angleY = 0;
+    function updateCamera() {
+      const radius = 600;
+      angleX += 0.0025; // Even slower panning speed
+      angleY += 0.00125; // Even slower panning speed
+
+      const camera = Graph.camera();
+      camera.position.x = radius * Math.sin(angleX);
+      camera.position.y = radius * Math.sin(angleY);
+      camera.position.z = radius * Math.cos(angleX);
+
+      const lookAtPos = { x: 0, y: 0, z: 0 };
+      camera.lookAt(lookAtPos.x, lookAtPos.y, lookAtPos.z);
+    }
+
+    function revealNodesSequentially() {
+      let index = 0;
+      function revealNextNode() {
+        if (index < N) {
+          const sentiment = getRandomSentiment();
+          const newNode = {
+            id: index,
+            text: climateChangeTitles[index % climateChangeTitles.length],
+            group: Math.floor(Math.random() * 10),
+            color: sentimentToColor(sentiment),
+            sentiment: sentiment,
+            vx: (Math.random() - 0.5) * 2,
+            vy: (Math.random() - 0.5) * 2,
+            vz: (Math.random() - 0.5) * 2,
+            x: (Math.random() - 0.5) * CUBE_HALF_SIDE * 2,
+            y: (Math.random() - 0.5) * CUBE_HALF_SIDE * 2,
+            z: (Math.random() - 0.5) * CUBE_HALF_SIDE * 2
+          };
+          nodes.push(newNode);
+
+          // Connect the new node to an existing node
+          if (nodes.length > 1) {
+            const targetIndex = Math.floor(Math.random() * (nodes.length - 1));
+            links.push({ source: newNode.id, target: nodes[targetIndex].id });
+          }
+
+          Graph.graphData({ nodes, links });
+          index++;
+          setTimeout(revealNextNode, 5000); // reveal next node every 5 seconds
+        }
+      }
+      revealNextNode();
+    }
+
+    function updateFPS() {
+      const fpsCounter = document.getElementById('fpsValue');
+      const now = performance.now();
+      const fps = 1000 / (now - (updateFPS.lastTime || now));
+      updateFPS.lastTime = now;
+      fpsCounter.textContent = Math.round(fps);
+    }
+
+    // Start the animation and node reveal process
+    animate();
+    revealNodesSequentially();
+  </script>
+</body>
+</html>
